@@ -172,8 +172,14 @@ def forecast_case(case, name):
         if flat:
             # No trend to fit: a refresh is overdue. Earners roughly
             # unchanged, tracked players up several-fold, so the rate
-            # falls hard; keep a wide, downward-heavy spread.
-            median = clamp(last_rate * 0.22)
+            # falls hard; keep a wide, downward-heavy spread. How hard
+            # depends on the tier: the platinum and gold trophies are
+            # earned late, so almost no new player holds them yet and
+            # they dilute the most; bronze trophies include the early
+            # story and activity ones, whose earners grow a little even
+            # between refreshes, so they dilute the least.
+            dilution = {"platinum": 0.17, "gold": 0.18, "silver": 0.20, "bronze": 0.24}.get(trophy["tier"], 0.22)
+            median = clamp(last_rate * dilution)
             sigma = 1.6 + 0.5 * math.sqrt(horizon_days)
             lg = logit(median)
             rows.append({"id": trophy["id"], "q": [round4(inv_logit(lg + z * sigma)) for z in Z]})
@@ -189,12 +195,16 @@ def forecast_case(case, name):
                 resid = trend[2]
 
         # Earners fit, slope shrunk toward the tier's pooled slope.
+        # Its residual is kept: the two forecasts are combined by
+        # inverse residual variance, so the fit that tracked the
+        # history better counts for more.
         en_rate = None
+        en_resid = 0.3
         if len(series) >= 3 and n_fit:
             ys = [math.log(max(s[2] / 100.0 * s[3], 0.5)) for s in series]
             fit = wls([s[0] for s in series], ys, [s[1] for s in series])
             if fit:
-                a_e, b_e, _ = fit
+                a_e, b_e, en_resid = fit
                 b_group = tier_slope.get(trophy["tier"])
                 if b_group is not None:
                     b_e = (len(series) * b_e + 3.0 * b_group) / (len(series) + 3.0)
@@ -205,14 +215,14 @@ def forecast_case(case, name):
         # Combine the two forecasts in logit space, shrunk to the last rate.
         candidates = []
         if trend:
-            candidates.append(trend[0] + trend[1] * x_target)
+            candidates.append((trend[0] + trend[1] * x_target, 1.0 / (resid ** 2 + 0.05)))
         if en_rate is not None:
-            candidates.append(logit(en_rate))
+            candidates.append((logit(en_rate), 1.0 / (en_resid ** 2 + 0.05)))
         if not candidates:
             median = clamp(last_rate)
             sigma = 0.5 * math.sqrt(horizon_days) + 0.5
         else:
-            lg = sum(candidates) / len(candidates)
+            lg = sum(v * w for v, w in candidates) / sum(w for _, w in candidates)
             # Shrink toward persistence when the fit is noisy.
             shrink = 1.0 / (1.0 + resid)
             lg = shrink * lg + (1.0 - shrink) * logit(last_rate)
