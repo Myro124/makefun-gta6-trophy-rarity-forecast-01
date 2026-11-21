@@ -172,15 +172,15 @@ def forecast_case(case, name):
         if flat:
             # No trend to fit: a refresh is overdue. Earners roughly
             # unchanged, tracked players up several-fold, so the rate
-            # falls hard; keep a wide, downward-heavy spread. How hard
-            # depends on the tier: the platinum and gold trophies are
-            # earned late, so almost no new player holds them yet and
-            # they dilute the most; bronze trophies include the early
-            # story and activity ones, whose earners grow a little even
-            # between refreshes, so they dilute the least.
-            dilution = {"platinum": 0.17, "gold": 0.18, "silver": 0.20, "bronze": 0.24}.get(trophy["tier"], 0.22)
-            median = clamp(last_rate * dilution)
-            sigma = 1.6 + 0.5 * math.sqrt(horizon_days)
+            # falls hard; keep a wide, downward-heavy spread. The
+            # dilution is the launch-night refresh itself: tracked
+            # players went 638 -> 3,868 while earners barely moved, so
+            # every rate but the one at 100% was multiplied by about
+            # 638/3868 = 0.1649. The spread is kept narrower than the
+            # first version because that refresh is now the known
+            # shape of what a flat history is waiting for.
+            median = clamp(last_rate * 0.1649)
+            sigma = 1.0 + 0.3 * math.sqrt(horizon_days)
             lg = logit(median)
             rows.append({"id": trophy["id"], "q": [round4(inv_logit(lg + z * sigma)) for z in Z]})
             continue
